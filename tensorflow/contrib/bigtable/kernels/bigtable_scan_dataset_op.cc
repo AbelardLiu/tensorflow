@@ -15,8 +15,10 @@ limitations under the License.
 
 #include "tensorflow/contrib/bigtable/kernels/bigtable_lib.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/lib/core/refcount.h"
 
 namespace tensorflow {
+namespace data {
 namespace {
 
 class BigtableScanDatasetOp : public DatasetOpKernel {
@@ -63,7 +65,7 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
         errors::InvalidArgument(
             "Probability outside the range of (0, 1]. Got: ", probability));
 
-    BigtableTableResource* resource;
+    core::RefCountPtr<BigtableTableResource> resource;
     OP_REQUIRES_OK(ctx,
                    LookupResource(ctx, HandleFromInput(ctx, 0), &resource));
 
@@ -77,14 +79,14 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
       output_types.push_back(DT_STRING);
     }
 
-    *output = new Dataset(ctx, resource, std::move(prefix),
+    *output = new Dataset(ctx, resource.get(), std::move(prefix),
                           std::move(start_key), std::move(end_key),
                           std::move(column_families), std::move(columns),
                           probability, output_types, std::move(output_shapes));
   }
 
  private:
-  class Dataset : public GraphDatasetBase {
+  class Dataset : public DatasetBase {
    public:
     explicit Dataset(OpKernelContext* ctx, BigtableTableResource* table,
                      string prefix, string start_key, string end_key,
@@ -92,7 +94,7 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
                      std::vector<string> columns, float probability,
                      const DataTypeVector& output_types,
                      std::vector<PartialTensorShape> output_shapes)
-        : GraphDatasetBase(ctx),
+        : DatasetBase(DatasetContext(ctx)),
           table_(table),
           prefix_(std::move(prefix)),
           start_key_(std::move(start_key)),
@@ -111,8 +113,8 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
 
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
-      return std::unique_ptr<IteratorBase>(new Iterator(
-          {this, strings::StrCat(prefix, "::BigtableScanDataset")}));
+      return std::unique_ptr<IteratorBase>(
+          new Iterator({this, strings::StrCat(prefix, "::BigtableScan")}));
     }
 
     const DataTypeVector& output_dtypes() const override {
@@ -128,6 +130,19 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
     }
 
     BigtableTableResource* table() const { return table_; }
+
+    Status CheckExternalState() const override {
+      return errors::FailedPrecondition(DebugString(),
+                                        " depends on external state.");
+    }
+
+   protected:
+    Status AsGraphDefInternal(SerializationContext* ctx,
+                              DatasetGraphDefBuilder* b,
+                              Node** output) const override {
+      return errors::Unimplemented(DebugString(),
+                                   " does not support serialization");
+    }
 
    private:
     class Iterator : public BigtableReaderDatasetIterator<Dataset> {
@@ -165,7 +180,7 @@ class BigtableScanDatasetOp : public DatasetOpKernel {
                       std::vector<Tensor>* out_tensors) override {
         out_tensors->reserve(dataset()->columns_.size() + 1);
         Tensor row_key_tensor(ctx->allocator({}), DT_STRING, {});
-        row_key_tensor.scalar<string>()() = string(row.row_key());
+        row_key_tensor.scalar<tstring>()() = string(row.row_key());
         out_tensors->emplace_back(std::move(row_key_tensor));
 
         if (row.cells().size() > 2 * dataset()->columns_.size()) {
@@ -216,4 +231,5 @@ REGISTER_KERNEL_BUILDER(Name("BigtableScanDataset").Device(DEVICE_CPU),
                         BigtableScanDatasetOp);
 
 }  // namespace
+}  // namespace data
 }  // namespace tensorflow

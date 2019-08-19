@@ -93,7 +93,7 @@ class SerializeSparseOp : public OpKernel {
 // performs O(1) shallow copies (and hence is much cheaper than
 // dispatching to another thread would be).
 template <>
-bool SerializeSparseOp<string>::IsExpensive() {
+bool SerializeSparseOp<tstring>::IsExpensive() {
   return true;
 }
 template <>
@@ -102,14 +102,14 @@ bool SerializeSparseOp<Variant>::IsExpensive() {
 }
 
 template <>
-Status SerializeSparseOp<string>::Initialize(Tensor* result) {
+Status SerializeSparseOp<tstring>::Initialize(Tensor* result) {
   *result = Tensor(DT_STRING, TensorShape({3}));
   return Status::OK();
 }
 
 template <>
-Status SerializeSparseOp<string>::Serialize(const Tensor& input,
-                                            string* result) {
+Status SerializeSparseOp<tstring>::Serialize(const Tensor& input,
+                                             tstring* result) {
   TensorProto proto;
   input.AsProtoTensorContent(&proto);
   *result = proto.SerializeAsString();
@@ -118,8 +118,8 @@ Status SerializeSparseOp<string>::Serialize(const Tensor& input,
 
 REGISTER_KERNEL_BUILDER(Name("SerializeSparse")
                             .Device(DEVICE_CPU)
-                            .TypeConstraint<string>("out_type"),
-                        SerializeSparseOp<string>);
+                            .TypeConstraint<tstring>("out_type"),
+                        SerializeSparseOp<tstring>);
 
 template <>
 Status SerializeSparseOp<Variant>::Initialize(Tensor* result) {
@@ -190,8 +190,10 @@ class SerializeManySparseOp : public SerializeManySparseOpBase<U> {
     TensorShape tensor_input_shape(input_shape->vec<int64>());
     gtl::InlinedVector<int64, 8> std_order(rank);
     std::iota(std_order.begin(), std_order.end(), 0);
-    SparseTensor input_st(*input_indices, *input_values, tensor_input_shape,
-                          std_order);
+    SparseTensor input_st;
+    OP_REQUIRES_OK(context, SparseTensor::Create(*input_indices, *input_values,
+                                                 tensor_input_shape, std_order,
+                                                 &input_st));
 
     auto input_shape_t = input_shape->vec<int64>();
     const int64 N = input_shape_t(0);
@@ -259,27 +261,27 @@ class SerializeManySparseOp : public SerializeManySparseOpBase<U> {
 };
 
 template <>
-Status SerializeManySparseOpBase<string>::Initialize(const int64 n,
-                                                     Tensor* result) {
+Status SerializeManySparseOpBase<tstring>::Initialize(const int64 n,
+                                                      Tensor* result) {
   *result = Tensor(DT_STRING, TensorShape({n, 3}));
   return Status::OK();
 }
 
 template <>
-Status SerializeManySparseOpBase<string>::Serialize(const Tensor& input,
-                                                    string* result) {
+Status SerializeManySparseOpBase<tstring>::Serialize(const Tensor& input,
+                                                     tstring* result) {
   TensorProto proto;
   input.AsProtoTensorContent(&proto);
   *result = proto.SerializeAsString();
   return Status::OK();
 }
 
-#define REGISTER_KERNELS(type)                                     \
-  REGISTER_KERNEL_BUILDER(Name("SerializeManySparse")              \
-                              .Device(DEVICE_CPU)                  \
-                              .TypeConstraint<type>("T")           \
-                              .TypeConstraint<string>("out_type"), \
-                          SerializeManySparseOp<type, string>)
+#define REGISTER_KERNELS(type)                                      \
+  REGISTER_KERNEL_BUILDER(Name("SerializeManySparse")               \
+                              .Device(DEVICE_CPU)                   \
+                              .TypeConstraint<type>("T")            \
+                              .TypeConstraint<tstring>("out_type"), \
+                          SerializeManySparseOp<type, tstring>)
 
 TF_CALL_ALL_TYPES(REGISTER_KERNELS);
 #undef REGISTER_KERNELS

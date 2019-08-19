@@ -16,8 +16,10 @@ limitations under the License.
 #include "tensorflow/contrib/bigtable/kernels/bigtable_lib.h"
 #include "tensorflow/contrib/bigtable/kernels/bigtable_range_helpers.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/lib/core/refcount.h"
 
 namespace tensorflow {
+namespace data {
 namespace {
 
 class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
@@ -34,7 +36,7 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
     string end_key;
     OP_REQUIRES_OK(ctx, ParseScalarArgument<string>(ctx, "end_key", &end_key));
 
-    BigtableTableResource* resource;
+    core::RefCountPtr<BigtableTableResource> resource;
     OP_REQUIRES_OK(ctx,
                    LookupResource(ctx, HandleFromInput(ctx, 0), &resource));
 
@@ -47,16 +49,16 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
                       "If prefix is specified, end_key must be empty."));
     }
 
-    *output = new Dataset(ctx, resource, std::move(prefix),
+    *output = new Dataset(ctx, resource.get(), std::move(prefix),
                           std::move(start_key), std::move(end_key));
   }
 
  private:
-  class Dataset : public GraphDatasetBase {
+  class Dataset : public DatasetBase {
    public:
     explicit Dataset(OpKernelContext* ctx, BigtableTableResource* table,
                      string prefix, string start_key, string end_key)
-        : GraphDatasetBase(ctx),
+        : DatasetBase(DatasetContext(ctx)),
           table_(table),
           key_range_(MakeMultiModeKeyRange(
               std::move(prefix), std::move(start_key), std::move(end_key))) {
@@ -68,7 +70,7 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
       return std::unique_ptr<IteratorBase>(new Iterator(
-          {this, strings::StrCat(prefix, "::BigtableSampleKeyPairsDataset")}));
+          {this, strings::StrCat(prefix, "::BigtableSampleKeyPairs")}));
     }
 
     const DataTypeVector& output_dtypes() const override {
@@ -85,6 +87,19 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
 
     string DebugString() const override {
       return "BigtableSampleKeyPairsDatasetOp::Dataset";
+    }
+
+    Status CheckExternalState() const override {
+      return errors::FailedPrecondition(DebugString(),
+                                        " depends on external state.");
+    }
+
+   protected:
+    Status AsGraphDefInternal(SerializationContext* ctx,
+                              DatasetGraphDefBuilder* b,
+                              Node** output) const override {
+      return errors::Unimplemented(DebugString(),
+                                   " does not support serialization");
     }
 
    private:
@@ -115,15 +130,15 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
       // ensure we don't accidentally miss any subsets of the requested range by
       // including `begin_key()` and `end_key()` as appropriate.
       Status Initialize(IteratorContext* ctx) override {
-        grpc::Status status;
-        std::vector<google::cloud::bigtable::RowKeySample> row_keys =
-            dataset()->table().table().SampleRows(status);
-        if (!status.ok()) {
-          return GrpcStatusToTfStatus(status);
+        ::google::cloud::StatusOr<
+            std::vector<::google::cloud::bigtable::RowKeySample>>
+            row_key_samples = dataset()->table().table().SampleRows();
+        if (!row_key_samples.ok()) {
+          return GcpStatusToTfStatus(row_key_samples.status());
         }
 
-        for (size_t i = 0; i < row_keys.size(); ++i) {
-          string row_key(row_keys[i].row_key);
+        for (const auto& row_key_sample : *row_key_samples) {
+          string row_key(row_key_sample.row_key);
           if (dataset()->key_range_.contains_key(row_key)) {
             // First key: check to see if we need to add the begin_key.
             if (keys_.empty() && dataset()->key_range_.begin_key() != row_key) {
@@ -157,7 +172,7 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
                              std::vector<Tensor>* out_tensors,
                              bool* end_of_sequence) override {
         mutex_lock l(mu_);
-        if (index_ > keys_.size() - 2) {
+        if (index_ + 2 > keys_.size()) {
           *end_of_sequence = true;
           return Status::OK();
         }
@@ -165,14 +180,25 @@ class BigtableSampleKeyPairsDatasetOp : public DatasetOpKernel {
         *end_of_sequence = false;
         out_tensors->emplace_back(ctx->allocator({}), DT_STRING,
                                   TensorShape({}));
-        out_tensors->back().scalar<string>()() = keys_[index_];
+        out_tensors->back().scalar<tstring>()() = keys_[index_];
 
         out_tensors->emplace_back(ctx->allocator({}), DT_STRING,
                                   TensorShape({}));
-        out_tensors->back().scalar<string>()() = keys_[index_ + 1];
+        out_tensors->back().scalar<tstring>()() = keys_[index_ + 1];
         ++index_;
 
         return Status::OK();
+      }
+
+     protected:
+      Status SaveInternal(IteratorStateWriter* writer) override {
+        return errors::Unimplemented("SaveInternal is currently not supported");
+      }
+
+      Status RestoreInternal(IteratorContext* ctx,
+                             IteratorStateReader* reader) override {
+        return errors::Unimplemented(
+            "RestoreInternal is currently not supported");
       }
 
      private:
@@ -197,4 +223,5 @@ REGISTER_KERNEL_BUILDER(
     BigtableSampleKeyPairsDatasetOp);
 
 }  // namespace
+}  // namespace data
 }  // namespace tensorflow

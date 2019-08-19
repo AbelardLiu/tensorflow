@@ -47,20 +47,18 @@ Status HloDomainRemover::RunContext::VerifyAndNormalizeDomain(
                       HloDomainVerifier::VerifyDomain(domain));
   if (ref_metadata != nullptr) {
     VLOG(4) << "Applying domain normalization: " << ref_metadata->ToString();
-    TF_RETURN_IF_ERROR(ref_metadata->NormalizeInstructions(domain));
+    TF_RETURN_IF_ERROR(remover_->normalizer_(domain, ref_metadata));
   } else {
     // No kDomain instruction was present within this domain, so call the
     // generic normalization functions and have them apply their heuristic.
     VLOG(2) << "Applying domain-less normalization";
-    TF_RETURN_IF_ERROR(remover_->normalizer_(domain));
+    TF_RETURN_IF_ERROR(remover_->normalizer_(domain, nullptr));
   }
   return Status::OK();
 }
 
 StatusOr<bool> HloDomainRemover::RunContext::Run() {
   VLOG(4) << "Processing metadata domain: '" << remover_->kind_ << "'";
-  hlo_graph_dumper::MaybeDumpHloModule(*module_, "Before Domain Remover");
-
   int64 removed_domains = 0;
   for (HloComputation* computation : module_->computations()) {
     // First create the domain instruciton sets. A domain instruction set is
@@ -97,9 +95,6 @@ StatusOr<bool> HloDomainRemover::RunContext::Run() {
   }
   VLOG(3) << "Removed " << removed_domains << " kDomain instructions of '"
           << remover_->kind_ << "' kind";
-  if (removed_domains > 0) {
-    hlo_graph_dumper::MaybeDumpHloModule(*module_, "After Domain Remover");
-  }
   return removed_domains > 0;
 }
 

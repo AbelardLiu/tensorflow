@@ -27,22 +27,24 @@ namespace eager {
 
 GrpcEagerServiceImpl::GrpcEagerServiceImpl(
     const WorkerEnv* env, ::grpc::ServerBuilder* server_builder)
-    : local_impl_(env) {
-  request_handler_threadpool_ =
-      MakeUnique<thread::ThreadPool>(env->env, "EagerServiceRequestHandler", 4);
+    : env_(env), local_impl_(env) {
   server_builder->RegisterService(&service_);
   cq_ = server_builder->AddCompletionQueue();
 }
 
+Status GrpcEagerServiceImpl::CreateMasterContext(
+    const tensorflow::uint64 context_id, EagerContext* context) {
+  return local_impl_.CreateMasterContext(context_id, context);
+}
+
 void GrpcEagerServiceImpl::HandleRPCsLoop() {
-#define ENQUEUE_REQUEST(method)                                                \
-  do {                                                                         \
-    Call<GrpcEagerServiceImpl,                                                 \
-         tensorflow::eager::grpc::EagerService::AsyncService, method##Request, \
-         method##Response>::                                                   \
-        EnqueueRequest(&service_, cq_.get(),                                   \
-                       &grpc::EagerService::AsyncService::Request##method,     \
-                       &GrpcEagerServiceImpl::method##Handler, false);         \
+#define ENQUEUE_REQUEST(method)                                            \
+  do {                                                                     \
+    Call<GrpcEagerServiceImpl, grpc::EagerService::AsyncService,           \
+         method##Request, method##Response>::                              \
+        EnqueueRequest(&service_, cq_.get(),                               \
+                       &grpc::EagerService::AsyncService::Request##method, \
+                       &GrpcEagerServiceImpl::method##Handler, false);     \
   } while (0)
   ENQUEUE_REQUEST(CreateContext);
   ENQUEUE_REQUEST(Enqueue);
@@ -50,7 +52,16 @@ void GrpcEagerServiceImpl::HandleRPCsLoop() {
   ENQUEUE_REQUEST(KeepAlive);
   ENQUEUE_REQUEST(CloseContext);
   ENQUEUE_REQUEST(RegisterFunction);
+  ENQUEUE_REQUEST(SendTensor);
 #undef ENQUEUE_REQUEST
+
+  // Request a StreamingEnqueue call.
+  ServerBidirectionalStreamingCall<GrpcEagerServiceImpl,
+                                   grpc::EagerService::AsyncService,
+                                   EnqueueRequest, EnqueueResponse>::
+      EnqueueRequest(&service_, cq_.get(),
+                     &grpc::EagerService::AsyncService::RequestStreamingEnqueue,
+                     &GrpcEagerServiceImpl::StreamingEnqueueHandler);
 
   void* tag;  // Matches the operation started against this cq_.
   bool ok;
@@ -60,8 +71,8 @@ void GrpcEagerServiceImpl::HandleRPCsLoop() {
       // The queue is shutting down.
       break;
     }
-    UntypedCall<GrpcEagerServiceImpl>::Tag* callback_tag =
-        static_cast<UntypedCall<GrpcEagerServiceImpl>::Tag*>(tag);
+    GrpcCallTag<GrpcEagerServiceImpl>* callback_tag =
+        static_cast<GrpcCallTag<GrpcEagerServiceImpl>*>(tag);
 
     if (callback_tag) {
       callback_tag->OnCompleted(this, ok);

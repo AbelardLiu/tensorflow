@@ -24,6 +24,7 @@ import numpy as np
 
 from tensorflow.contrib.distributions.python.ops.bijectors.affine import Affine
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors
 from tensorflow.python.ops import array_ops
 from tensorflow.python.platform import test
 
@@ -32,14 +33,14 @@ class AffineBijectorTest(test.TestCase):
   """Tests correctness of the Y = scale @ x + shift transformation."""
 
   def testProperties(self):
-    with self.test_session():
+    with self.cached_session():
       mu = -1.
       # scale corresponds to 1.
       bijector = Affine(shift=mu)
       self.assertEqual("affine", bijector.name)
 
   def testNoBatchMultivariateIdentity(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -71,7 +72,7 @@ class AffineBijectorTest(test.TestCase):
             0., run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testNoBatchMultivariateDiag(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -114,7 +115,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testNoBatchMultivariateFullDynamic(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       x = array_ops.placeholder(dtypes.float32, name="x")
       mu = array_ops.placeholder(dtypes.float32, name="mu")
       scale_diag = array_ops.placeholder(dtypes.float32, name="scale_diag")
@@ -137,7 +138,7 @@ class AffineBijectorTest(test.TestCase):
                    feed_dict))
 
   def testBatchMultivariateIdentity(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -161,7 +162,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testBatchMultivariateDiag(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -185,7 +186,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testBatchMultivariateFullDynamic(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       x = array_ops.placeholder(dtypes.float32, name="x")
       mu = array_ops.placeholder(dtypes.float32, name="mu")
       scale_diag = array_ops.placeholder(dtypes.float32, name="scale_diag")
@@ -209,7 +210,7 @@ class AffineBijectorTest(test.TestCase):
               x, event_ndims=1), feed_dict))
 
   def testIdentityWithDiagUpdate(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -235,7 +236,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testIdentityWithTriL(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -261,7 +262,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testDiagWithTriL(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -285,7 +286,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testIdentityAndDiagWithTriL(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -312,7 +313,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testIdentityWithVDVTUpdate(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -349,7 +350,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector_ref.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testDiagWithVDVTUpdate(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -385,7 +386,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector_ref.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testTriLWithVDVTUpdate(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -422,7 +423,7 @@ class AffineBijectorTest(test.TestCase):
             run(bijector_ref.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testTriLWithVDVTUpdateNoDiagonal(self):
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       placeholder = array_ops.placeholder(dtypes.float32, name="x")
 
       def static_run(fun, x, **kwargs):
@@ -459,15 +460,16 @@ class AffineBijectorTest(test.TestCase):
             run(bijector_ref.inverse_log_det_jacobian, x, event_ndims=1))
 
   def testNoBatchMultivariateRaisesWhenSingular(self):
-    with self.test_session():
+    with self.cached_session():
       mu = [1., -1]
-      bijector = Affine(
-          shift=mu,
-          # Has zero on the diagonal.
-          scale_diag=[0., 1],
-          validate_args=True)
-      with self.assertRaisesOpError("diagonal part must be non-zero"):
-        bijector.forward([1., 1.]).eval()
+      with self.assertRaisesRegexp(errors.InvalidArgumentError,
+                                   "diagonal part must be non-zero"):
+        _ = Affine(
+            shift=mu,
+            # Has zero on the diagonal.
+            scale_diag=[0., 1],
+            validate_args=True)
+        # Error detected statically; don't need to run the op.
 
   def _makeScale(self,
                  x,
@@ -531,7 +533,7 @@ class AffineBijectorTest(test.TestCase):
           itertools.combinations(s, r) for r in range(len(s) + 1))
 
     for args in _powerset(scale_params.items()):
-      with self.test_session():
+      with self.cached_session():
         args = dict(args)
 
         scale_args = dict({"x": x}, **args)

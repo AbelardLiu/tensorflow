@@ -17,6 +17,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 
 namespace tensorflow {
+namespace data {
 namespace {
 
 class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
@@ -25,7 +26,7 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
 
   void MakeDataset(OpKernelContext* ctx, DatasetBase* input,
                    DatasetBase** output) override {
-    BigtableTableResource* table;
+    core::RefCountPtr<BigtableTableResource> table;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 1), &table));
 
     std::vector<string> column_families;
@@ -48,12 +49,12 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
     }
 
     *output =
-        new Dataset(ctx, input, table, std::move(column_families),
+        new Dataset(ctx, input, table.get(), std::move(column_families),
                     std::move(columns), output_types, std::move(output_shapes));
   }
 
  private:
-  class Dataset : public GraphDatasetBase {
+  class Dataset : public DatasetBase {
    public:
     explicit Dataset(OpKernelContext* ctx, const DatasetBase* input,
                      BigtableTableResource* table,
@@ -61,7 +62,7 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
                      std::vector<string> columns,
                      const DataTypeVector& output_types,
                      std::vector<PartialTensorShape> output_shapes)
-        : GraphDatasetBase(ctx),
+        : DatasetBase(DatasetContext(ctx)),
           input_(input),
           table_(table),
           column_families_(std::move(column_families)),
@@ -80,8 +81,8 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
 
     std::unique_ptr<IteratorBase> MakeIteratorInternal(
         const string& prefix) const override {
-      return std::unique_ptr<IteratorBase>(new Iterator(
-          {this, strings::StrCat(prefix, "::BigtableLookupDataset")}));
+      return std::unique_ptr<IteratorBase>(
+          new Iterator({this, strings::StrCat(prefix, "::BigtableLookup")}));
     }
 
     const DataTypeVector& output_dtypes() const override {
@@ -94,6 +95,19 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
 
     string DebugString() const override {
       return "BigtableLookupDatasetOp::Dataset";
+    }
+
+    Status CheckExternalState() const override {
+      return errors::FailedPrecondition(DebugString(),
+                                        " depends on external state.");
+    }
+
+   protected:
+    Status AsGraphDefInternal(SerializationContext* ctx,
+                              DatasetGraphDefBuilder* b,
+                              Node** output) const override {
+      return errors::Unimplemented(DebugString(),
+                                   " does not support serialization");
     }
 
    private:
@@ -142,18 +156,19 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
         }
         if (input_tensors[0].NumElements() == 1) {
           // Single key lookup.
-          ::grpc::Status status;
-          auto pair = dataset()->table_->table().ReadRow(
-              input_tensors[0].scalar<string>()(), dataset()->filter_, status);
-          if (!status.ok()) {
-            return GrpcStatusToTfStatus(status);
+          ::google::cloud::StatusOr<
+              std::pair<bool, ::google::cloud::bigtable::Row>>
+              row = dataset()->table_->table().ReadRow(
+                  input_tensors[0].scalar<tstring>()(), dataset()->filter_);
+          if (!row.ok()) {
+            return GcpStatusToTfStatus(row.status());
           }
-          if (!pair.first) {
+          if (!row->first) {
             return errors::DataLoss("Row key '",
-                                    input_tensors[0].scalar<string>()(),
+                                    input_tensors[0].scalar<tstring>()(),
                                     "' not found.");
           }
-          TF_RETURN_IF_ERROR(ParseRow(ctx, pair.second, out_tensors));
+          TF_RETURN_IF_ERROR(ParseRow(ctx, row->second, out_tensors));
         } else {
           // Batched get.
           return errors::Unimplemented(
@@ -162,13 +177,24 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
         return Status::OK();
       }
 
+     protected:
+      Status SaveInternal(IteratorStateWriter* writer) override {
+        return errors::Unimplemented("SaveInternal is currently not supported");
+      }
+
+      Status RestoreInternal(IteratorContext* ctx,
+                             IteratorStateReader* reader) override {
+        return errors::Unimplemented(
+            "RestoreInternal is currently not supported");
+      }
+
      private:
       Status ParseRow(IteratorContext* ctx,
                       const ::google::cloud::bigtable::Row& row,
                       std::vector<Tensor>* out_tensors) {
         out_tensors->reserve(dataset()->columns_.size() + 1);
         Tensor row_key_tensor(ctx->allocator({}), DT_STRING, {});
-        row_key_tensor.scalar<string>()() = string(row.row_key());
+        row_key_tensor.scalar<tstring>()() = tstring(row.row_key());
         out_tensors->emplace_back(std::move(row_key_tensor));
 
         if (row.cells().size() > 2 * dataset()->columns_.size()) {
@@ -186,7 +212,7 @@ class BigtableLookupDatasetOp : public UnaryDatasetOpKernel {
             if (cell_itr->family_name() == dataset()->column_families_[i] &&
                 string(cell_itr->column_qualifier()) ==
                     dataset()->columns_[i]) {
-              col_tensor.scalar<string>()() = string(cell_itr->value());
+              col_tensor.scalar<tstring>()() = tstring(cell_itr->value());
               found_column = true;
             }
           }
@@ -218,4 +244,5 @@ REGISTER_KERNEL_BUILDER(Name("BigtableLookupDataset").Device(DEVICE_CPU),
                         BigtableLookupDatasetOp);
 
 }  // namespace
+}  // namespace data
 }  // namespace tensorflow

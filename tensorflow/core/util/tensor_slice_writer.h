@@ -16,8 +16,8 @@ limitations under the License.
 // The utility to write checkpoints for google brain tensor ops and v3
 // checkpoints for dist_belief.
 
-#ifndef TENSORFLOW_UTIL_TENSOR_SLICE_WRITER_H_
-#define TENSORFLOW_UTIL_TENSOR_SLICE_WRITER_H_
+#ifndef TENSORFLOW_CORE_UTIL_TENSOR_SLICE_WRITER_H_
+#define TENSORFLOW_CORE_UTIL_TENSOR_SLICE_WRITER_H_
 
 #include <unordered_map>
 
@@ -178,7 +178,7 @@ Status TensorSliceWriter::SaveData(const T* data, int64 num_elements,
 }
 
 template <>
-Status TensorSliceWriter::SaveData(const string* data, int64 num_elements,
+Status TensorSliceWriter::SaveData(const tstring* data, int64 num_elements,
                                    SavedSlice* ss);
 
 // Create a table builder that will write to "filename" in
@@ -192,4 +192,4 @@ Status CreateTableTensorSliceBuilder(const string& filename,
 
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_UTIL_TENSOR_SLICE_WRITER_H_
+#endif  // TENSORFLOW_CORE_UTIL_TENSOR_SLICE_WRITER_H_

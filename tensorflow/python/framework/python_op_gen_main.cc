@@ -52,7 +52,7 @@ Status ReadOpListFromFile(const string& filename,
     if (scanner.One(strings::Scanner::LETTER_DIGIT_DOT)
             .Any(strings::Scanner::LETTER_DIGIT_DASH_DOT_SLASH_UNDERSCORE)
             .GetResult(nullptr, &op_name)) {
-      op_list->emplace_back(op_name.ToString());
+      op_list->emplace_back(op_name);
     }
     s = input_buffer->ReadLine(&line_contents);
   }
@@ -96,7 +96,7 @@ string InferSourceFileName(const char* argv_zero) {
   // operators defined in <op type>_ops.cc
   const char* kExecPrefix = "gen_";
   const char* kExecSuffix = "_py_wrappers_cc";
-  if (str_util::ConsumePrefix(&command_str, kExecPrefix) &&
+  if (absl::ConsumePrefix(&command_str, kExecPrefix) &&
       str_util::EndsWith(command_str, kExecSuffix)) {
     command_str.remove_suffix(strlen(kExecSuffix));
     return strings::StrCat(command_str, ".cc");

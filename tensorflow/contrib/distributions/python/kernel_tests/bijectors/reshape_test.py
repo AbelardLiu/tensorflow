@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.contrib.distributions.python.ops.bijectors.reshape import Reshape
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops.distributions.bijector_test_util import assert_bijective_and_finite
@@ -50,7 +51,7 @@ class _ReshapeBijectorTest(object):
     expected_x = np.random.randn(4, 3, 2)
     expected_y = np.reshape(expected_x, [4, 6])
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, feed_dict = self.build_shapes([3, 2], [6,])
       bijector = Reshape(
           event_shape_out=shape_out,
@@ -84,7 +85,7 @@ class _ReshapeBijectorTest(object):
 
     # using the _tensor methods, we should always get a fully-specified
     # result since these are evaluated at graph runtime.
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       (shape_out_,
        shape_in_) = sess.run((
            bijector.forward_event_shape_tensor(shape_in),
@@ -103,7 +104,7 @@ class _ReshapeBijectorTest(object):
     expected_y_scalar = expected_x_scalar[0]
 
     shape_in, shape_out, feed_dict = self.build_shapes([], [1,])
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       bijector = Reshape(
           event_shape_out=shape_in,
           event_shape_in=shape_out, validate_args=True)
@@ -124,7 +125,7 @@ class _ReshapeBijectorTest(object):
 
   def testMultipleUnspecifiedDimensionsOpError(self):
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, feed_dict = self.build_shapes([2, 3], [4, -1, -1,])
       bijector = Reshape(
           event_shape_out=shape_out,
@@ -139,7 +140,7 @@ class _ReshapeBijectorTest(object):
   # pylint: disable=invalid-name
   def _testInvalidDimensionsOpError(self, expected_error_message):
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
 
       shape_in, shape_out, feed_dict = self.build_shapes([2, 3], [1, 2, -2,])
       bijector = Reshape(
@@ -150,12 +151,33 @@ class _ReshapeBijectorTest(object):
       with self.assertRaisesError(expected_error_message):
         sess.run(bijector.forward_event_shape_tensor(shape_in),
                  feed_dict=feed_dict)
+
+  def _testInvalidDimensionsStatic(self, expected_error_message):
+    """Version of _testInvalidDimensionsOpError for errors detected statically.
+
+    Statically means at graph construction time.
+
+    Args:
+        expected_error_message: String that should be present in the error
+          message that `Reshape` raises for invalid shapes.
+    """
+    shape_in, shape_out, _ = self.build_shapes([2, 3], [
+        1,
+        2,
+        -2,
+    ])
+    with self.assertRaisesWithPredicateMatch(errors.InvalidArgumentError,
+                                             expected_error_message):
+      _ = Reshape(
+          event_shape_out=shape_out,
+          event_shape_in=shape_in,
+          validate_args=True)
   # pylint: enable=invalid-name
 
   def testValidButNonMatchingInputOpError(self):
     x = np.random.randn(4, 3, 2)
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, feed_dict = self.build_shapes([2, 3], [1, 6, 1,])
       bijector = Reshape(
           event_shape_out=shape_out,
@@ -173,7 +195,7 @@ class _ReshapeBijectorTest(object):
   def testValidButNonMatchingInputPartiallySpecifiedOpError(self):
     x = np.random.randn(4, 3, 2)
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, feed_dict = self.build_shapes([2, -1], [1, 6, 1,])
       bijector = Reshape(
           event_shape_out=shape_out,
@@ -190,7 +212,7 @@ class _ReshapeBijectorTest(object):
     x1 = np.random.randn(4, 2, 3)
     x2 = np.random.randn(4, 1, 1, 5)
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, fd_mismatched = self.build_shapes([2, 3],
                                                              [1, 1, 5])
       bijector = Reshape(
@@ -208,7 +230,7 @@ class _ReshapeBijectorTest(object):
     expected_x = np.random.randn(4, 6)
     expected_y = np.reshape(expected_x, [4, 2, 3])
 
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       # one of input/output shapes is partially specified
       shape_in, shape_out, feed_dict = self.build_shapes([-1,], [2, 3])
       bijector = Reshape(
@@ -227,7 +249,7 @@ class _ReshapeBijectorTest(object):
   def testBothShapesPartiallySpecified(self):
     expected_x = np.random.randn(4, 2, 3)
     expected_y = np.reshape(expected_x, [4, 3, 2])
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       shape_in, shape_out, feed_dict = self.build_shapes([-1, 3], [-1, 2])
       bijector = Reshape(
           event_shape_out=shape_out,
@@ -245,7 +267,7 @@ class _ReshapeBijectorTest(object):
   def testDefaultVectorShape(self):
     expected_x = np.random.randn(4, 4)
     expected_y = np.reshape(expected_x, [4, 2, 2])
-    with self.test_session() as sess:
+    with self.cached_session() as sess:
       _, shape_out, feed_dict = self.build_shapes([-1,], [-1, 2])
       bijector = Reshape(shape_out,
                          validate_args=True)
@@ -292,7 +314,7 @@ class ReshapeBijectorTestStatic(test.TestCase, _ReshapeBijectorTest):
   def testBijectiveAndFinite(self):
     x = np.random.randn(4, 2, 3)
     y = np.reshape(x, [4, 1, 2, 3])
-    with self.test_session():
+    with self.cached_session():
       bijector = Reshape(
           event_shape_in=[2, 3],
           event_shape_out=[1, 2, 3],
@@ -300,9 +322,9 @@ class ReshapeBijectorTestStatic(test.TestCase, _ReshapeBijectorTest):
       assert_bijective_and_finite(
           bijector, x, y, event_ndims=2, rtol=1e-6, atol=0)
 
-  def testInvalidDimensionsOpError(self):
-    self._testInvalidDimensionsOpError(
-        "Invalid value in tensor used for shape: -2")
+  def testInvalidDimensionsStatic(self):
+    self._testInvalidDimensionsStatic(
+        "elements must be either positive integers or `-1`")
 
   def testInputOutputMismatchOpError(self):
     self._testInputOutputMismatchOpError("Cannot reshape a tensor with")
